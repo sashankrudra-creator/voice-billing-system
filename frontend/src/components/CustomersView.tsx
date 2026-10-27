@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Users, Plus, Edit2, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../App';
+import { API_BASE_URL } from '../apiConfig';
 
 const avatarStyles: Record<string, string> = {
   violet: "bg-violet-100 text-violet-700",
@@ -28,7 +29,7 @@ export default function CustomersView() {
 
   const fetchCustomers = () => {
     setLoading(true);
-    axios.get('http://127.0.0.1:8000/api/customers/', {
+    axios.get(`${API_BASE_URL}/api/customers/`, {
       params: { shopkeeper_email: shopkeeper?.email }
     })
       .then(res => {
@@ -83,8 +84,8 @@ export default function CustomersView() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const url = editingCustomer 
-      ? `http://127.0.0.1:8000/api/customers/${editingCustomer.id}/`
-      : 'http://127.0.0.1:8000/api/customers/';
+      ? `${API_BASE_URL}/api/customers/${editingCustomer.id}/`
+      : `${API_BASE_URL}/api/customers/`;
     
     const method = editingCustomer ? 'put' : 'post';
 
@@ -99,7 +100,7 @@ export default function CustomersView() {
 
   const handleDelete = (id: number) => {
     if (confirm('Are you sure you want to delete this customer?')) {
-      axios.delete(`http://127.0.0.1:8000/api/customers/${id}/`)
+      axios.delete(`${API_BASE_URL}/api/customers/${id}/`)
         .then(() => {
           toast.success('Customer deleted');
           fetchCustomers();

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Customer, Product, Bill, HourlySales, RevenueTrend, ShopkeeperProfile, Notification
+from .models import Customer, Product, Bill, HourlySales, RevenueTrend, ShopkeeperProfile, Notification, LoginLog, ActivityLog
 
 admin.site.register(Customer)
 admin.site.register(Product)
@@ -9,3 +9,5 @@ admin.site.register(RevenueTrend)
 
 admin.site.register(ShopkeeperProfile)
 admin.site.register(Notification)
+admin.site.register(LoginLog)
+admin.site.register(ActivityLog)

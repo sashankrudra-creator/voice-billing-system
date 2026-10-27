@@ -4,6 +4,8 @@ import { Mic2, Square, Loader2, Sparkles, CheckCircle2, AlertCircle, Trash2, Sen
 import { toast } from "sonner";
 import QRCode from "react-qr-code";
 import { useAuth } from "../App";
+import PaymentModal from "./PaymentModal";
+import { API_BASE_URL } from "../apiConfig";
 
 export default function VoiceBilling() {
   const { shopkeeper } = useAuth();
@@ -25,6 +27,7 @@ export default function VoiceBilling() {
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerName, setNewCustomerName] = useState("");
   const [billCustomerName, setBillCustomerName] = useState("");
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     // Check if browser supports SpeechRecognition
@@ -124,7 +127,7 @@ export default function VoiceBilling() {
     setError("");
     
     try {
-      const response = await axios.post("http://127.0.0.1:8000/api/voice-billing/", {
+      const response = await axios.post(`${API_BASE_URL}/api/voice-billing/`, {
         text: transcript,
         shopkeeper_email: shopkeeper?.email
       });
@@ -172,7 +175,7 @@ export default function VoiceBilling() {
           return;
       }
       
-      axios.get("http://127.0.0.1:8000/api/customers/")
+      axios.get(`${API_BASE_URL}/api/customers/`)
           .then(res => setCustomers(res.data))
           .catch(err => console.error("Error fetching customers", err));
           
@@ -187,7 +190,7 @@ export default function VoiceBilling() {
           phone = newCustomerPhone;
           if (newCustomerName) {
               try {
-                  await axios.post("http://127.0.0.1:8000/api/customers/", {
+                  await axios.post(`${API_BASE_URL}/api/customers/`, {
                       name: newCustomerName,
                       phone: newCustomerPhone,
                       initials: newCustomerName.substring(0, 2).toUpperCase(),
@@ -221,19 +224,23 @@ export default function VoiceBilling() {
       setShowWhatsAppModal(false);
   };
 
-  const handleCompleteSale = async () => {
+  const handleCompleteSale = () => {
       const grandTotal = calculateGrandTotal();
       if (grandTotal <= 0) {
           toast.error("Please add prices before completing the sale.");
           return;
       }
+      setShowPaymentModal(true);
+  };
 
+  const handleConfirmPayment = async (paymentMode: "Cash" | "UPI") => {
+      const grandTotal = calculateGrandTotal();
       const invoiceNumber = `INV-${Math.floor(1000 + Math.random() * 9000)}`;
       const customerNameToSave = billCustomerName.trim() || "Walk-in Customer";
       const customerInitials = billCustomerName.trim() ? billCustomerName.trim().substring(0, 2).toUpperCase() : "WC";
 
       try {
-          await axios.post("http://127.0.0.1:8000/api/bills/", {
+          await axios.post(`${API_BASE_URL}/api/bills/`, {
               invoice: invoiceNumber,
               customer: customerNameToSave,
               amount: `₹${grandTotal}`,
@@ -245,11 +252,12 @@ export default function VoiceBilling() {
               shopkeeper_email: shopkeeper?.email
           });
           
-          toast.success("Sale completed! Amount added to today's sales.");
+          toast.success(`Sale completed via ${paymentMode}! Invoice #${invoiceNumber}`);
           handleClear();
       } catch (err) {
           console.error("Failed to complete sale", err);
           toast.error("Failed to record the sale.");
+          throw err;
       }
   };
 
@@ -510,6 +518,16 @@ export default function VoiceBilling() {
                 </div>
             </div>
         )}
+
+        {/* Payment Method Modal (Matches Phone 2 & 3 in user screenshot) */}
+        <PaymentModal
+            isOpen={showPaymentModal}
+            onClose={() => setShowPaymentModal(false)}
+            customerName={billCustomerName || "Walk-in Customer"}
+            totalAmount={calculateGrandTotal()}
+            onConfirm={handleConfirmPayment}
+            storeName={shopkeeper?.store_name}
+        />
     </div>
   );
 }

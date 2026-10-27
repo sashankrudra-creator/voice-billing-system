@@ -3,6 +3,7 @@ import axios from 'axios';
 import { FileText, Plus, X, Eye, Search, Filter, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../App';
+import { API_BASE_URL } from '../apiConfig';
 
 const avatarStyles: Record<string, string> = {
   violet: "bg-violet-100 text-violet-700",
@@ -33,7 +34,7 @@ export default function BillsView() {
 
   const fetchBills = () => {
     setLoading(true);
-    axios.get('http://127.0.0.1:8000/api/bills/', {
+    axios.get(`${API_BASE_URL}/api/bills/`, {
       params: { shopkeeper_email: shopkeeper?.email }
     })
       .then(res => {
@@ -84,7 +85,7 @@ export default function BillsView() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    axios.post('http://127.0.0.1:8000/api/bills/', { ...formData, shopkeeper_email: shopkeeper?.email })
+    axios.post(`${API_BASE_URL}/api/bills/`, { ...formData, shopkeeper_email: shopkeeper?.email })
       .then(() => {
         toast.success('Bill generated successfully');
         setShowModal(false);

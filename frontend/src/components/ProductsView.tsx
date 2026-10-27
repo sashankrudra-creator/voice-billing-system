@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Package, Plus, Edit2, Trash2, X, Camera, ScanLine } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../App';
+import { API_BASE_URL } from '../apiConfig';
 
 export default function ProductsView() {
   const { shopkeeper } = useAuth();
@@ -23,7 +24,7 @@ export default function ProductsView() {
 
   const fetchProducts = () => {
     setLoading(true);
-    axios.get('http://127.0.0.1:8000/api/products/', {
+    axios.get(`${API_BASE_URL}/api/products/`, {
       params: { shopkeeper_email: shopkeeper?.email }
     })
       .then(res => {
@@ -68,8 +69,8 @@ export default function ProductsView() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const url = editingProduct
-      ? `http://127.0.0.1:8000/api/products/${editingProduct.id}/`
-      : 'http://127.0.0.1:8000/api/products/';
+      ? `${API_BASE_URL}/api/products/${editingProduct.id}/`
+      : `${API_BASE_URL}/api/products/`;
 
     const method = editingProduct ? 'put' : 'post';
 
@@ -111,7 +112,7 @@ export default function ProductsView() {
 
   const handleDelete = (id: number) => {
     if (confirm('Are you sure you want to delete this product?')) {
-      axios.delete(`http://127.0.0.1:8000/api/products/${id}/`)
+      axios.delete(`${API_BASE_URL}/api/products/${id}/`)
         .then(() => {
           toast.success('Product deleted');
           fetchProducts();
@@ -132,7 +133,58 @@ export default function ProductsView() {
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/40">
+      {/* Mobile Card List (Matches Phone 1 layout) */}
+      <div className="space-y-3 md:hidden">
+        {loading ? (
+          <div className="py-10 text-center text-sm text-slate-400">Loading products...</div>
+        ) : products.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-500 bg-white rounded-2xl border border-slate-200">
+            No products found. Tap "+ Add Product" to add your first item.
+          </div>
+        ) : (
+          products.map((product) => (
+            <div key={product.id} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
+                    <Package className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-sm text-slate-900 truncate">{product.name}</h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                      Barcode: {product.barcode || "N/A"}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="font-bold text-base text-slate-900">{product.value}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1 border-t border-slate-50">
+                <span className="text-xs text-slate-400">{product.sold || "0"} sold</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleOpenModal(product)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" /> Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(product.id)}
+                    className="p-1.5 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop Table View */}
+      <div className="hidden md:block overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/40">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left">
             <thead>

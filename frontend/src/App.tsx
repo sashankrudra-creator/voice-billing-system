@@ -8,8 +8,8 @@ import { useState, createContext, useContext } from "react";
 import axios from "axios";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
-
 import Register from "./pages/Register";
+import AdminPage from "./pages/AdminPage";
 
 // --- Auth Context ---
 interface AuthContextType {
@@ -38,6 +38,7 @@ function Router() {
       </Route>
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
+      <Route path="/admin12" component={AdminPage} />
       <Route path="/404" component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

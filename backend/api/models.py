@@ -8,6 +8,7 @@ class ShopkeeperProfile(models.Model):
     store_name = models.CharField(max_length=255)
     address = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    last_login = models.DateTimeField(null=True, blank=True)
     
     def __str__(self):
         return f"{self.store_name} ({self.name})"
@@ -79,3 +80,49 @@ class Notification(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class LoginLog(models.Model):
+    shopkeeper = models.ForeignKey(ShopkeeperProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name='login_logs')
+    email = models.CharField(max_length=255)
+    store_name = models.CharField(max_length=255, blank=True, null=True)
+    status = models.CharField(max_length=20, default='SUCCESS') # SUCCESS or FAILED
+    failure_reason = models.CharField(max_length=255, blank=True, null=True)
+    ip_address = models.CharField(max_length=100, blank=True, null=True)
+    user_agent = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.email} - {self.status} ({self.created_at})"
+
+
+class ActivityLog(models.Model):
+    ACTION_TYPES = [
+        ('LOGIN', 'Login'),
+        ('LOGOUT', 'Logout'),
+        ('REGISTER', 'Registration'),
+        ('BILL_CREATED', 'Bill Created'),
+        ('PRODUCT_ADDED', 'Product Added'),
+        ('CUSTOMER_ADDED', 'Customer Added'),
+        ('PROFILE_UPDATED', 'Profile Updated'),
+        ('SYSTEM', 'System Event'),
+    ]
+
+    shopkeeper = models.ForeignKey(ShopkeeperProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name='activity_logs')
+    store_name = models.CharField(max_length=255, blank=True, null=True)
+    action_type = models.CharField(max_length=50, choices=ACTION_TYPES, default='SYSTEM')
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    metadata = models.JSONField(blank=True, null=True)
+    ip_address = models.CharField(max_length=100, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.action_type}] {self.title} ({self.created_at})"
+

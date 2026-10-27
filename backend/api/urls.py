@@ -1,6 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import DashboardDataView, LoginView, RegisterView, UpdateProfileView, CustomerViewSet, ProductViewSet, BillViewSet, VoiceBillingView, ImageBillingView, GenerateBillView
+from .views import (
+    DashboardDataView, LoginView, RegisterView, UpdateProfileView,
+    CustomerViewSet, ProductViewSet, BillViewSet,
+    VoiceBillingView, ImageBillingView, GenerateBillView,
+    AdminAuthView, AdminOverviewView
+)
 
 router = DefaultRouter()
 router.register(r'customers', CustomerViewSet, basename='customer')
@@ -16,5 +21,7 @@ urlpatterns = [
     path('voice-billing/', VoiceBillingView.as_view(), name='voice-billing'),
     path('image-billing/', ImageBillingView.as_view(), name='image-billing'),
     path('generate-bill/', GenerateBillView.as_view(), name='generate-bill'),
+    path('admin-auth/', AdminAuthView.as_view(), name='admin-auth'),
+    path('admin-overview/', AdminOverviewView.as_view(), name='admin-overview'),
     path('', include(router.urls)),
 ]

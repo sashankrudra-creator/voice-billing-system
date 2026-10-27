@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 import os
+from urllib.parse import urlparse, unquote
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -25,12 +26,12 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-w%v^clrlxzs%oi&q0we$*0$*)fmh&tx(mhdq0%&%2ehe+lnxdc'
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-w%v^clrlxzs%oi&q0we$*0$*)fmh&tx(mhdq0%&%2ehe+lnxdc')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -49,6 +50,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -80,21 +82,49 @@ WSGI_APPLICATION = 'core.wsgi.application'
 
 
 # Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
+# Supports DATABASE_URL (Render, TiDB, Aiven, Railway, PlanetScale)
+# Or individual DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
+# Defaults to local MySQL (quantumvoice_db / root / Rudra@2005)
 
 import pymysql
 pymysql.install_as_MySQLdb()
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'quantumvoice_db',
-        'USER': 'root',
-        'PASSWORD': 'Rudra@2005',
-        'HOST': 'localhost',
-        'PORT': '3306',
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL:
+    parsed = urlparse(DATABASE_URL)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': unquote(parsed.path.lstrip('/')),
+            'USER': unquote(parsed.username or ''),
+            'PASSWORD': unquote(parsed.password or ''),
+            'HOST': parsed.hostname or 'localhost',
+            'PORT': str(parsed.port or 3306),
+            'OPTIONS': {},
+        }
     }
-}
+    if os.getenv('DB_SSL_CA'):
+        DATABASES['default']['OPTIONS']['ssl'] = {'ca': os.getenv('DB_SSL_CA')}
+    elif os.getenv('DB_SSL_MODE') == 'REQUIRED' or os.getenv('MYSQL_SSL', '').lower() in ('true', '1', 'required'):
+        DATABASES['default']['OPTIONS']['ssl'] = {'ssl_mode': 'REQUIRED'}
+else:
+    db_options = {}
+    if os.getenv('DB_SSL_CA'):
+        db_options['ssl'] = {'ca': os.getenv('DB_SSL_CA')}
+    elif os.getenv('DB_SSL_MODE') == 'REQUIRED' or os.getenv('MYSQL_SSL', '').lower() in ('true', '1', 'required'):
+        db_options['ssl'] = {'ssl_mode': 'REQUIRED'}
+
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.getenv('DB_NAME', os.getenv('MYSQLDATABASE', 'quantumvoice_db')),
+            'USER': os.getenv('DB_USER', os.getenv('MYSQLUSER', 'root')),
+            'PASSWORD': os.getenv('DB_PASSWORD', os.getenv('MYSQLPASSWORD', 'Rudra@2005')),
+            'HOST': os.getenv('DB_HOST', os.getenv('MYSQLHOST', 'localhost')),
+            'PORT': os.getenv('DB_PORT', os.getenv('MYSQLPORT', '3306')),
+            'OPTIONS': db_options,
+        }
+    }
 
 
 # Password validation
@@ -129,17 +159,20 @@ USE_TZ = True
 
 
 # Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/4.2/howto/static-files/
+# WhiteNoise serves static files efficiently in production
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
-# https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# CORS Configuration
 from corsheaders.defaults import default_headers
 
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'x-shopkeeper-email',
 ]
-

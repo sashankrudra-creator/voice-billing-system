@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
 import ProductsView from "../components/ProductsView";
 import CustomersView from "../components/CustomersView";
 import SettingsView from "../components/SettingsView";
@@ -7,6 +8,7 @@ import VoiceBilling from "../components/VoiceBilling";
 import ImageBilling from "../components/ImageBilling";
 import BarcodeBilling from "../components/BarcodeBilling";
 import axios from "axios";
+import { API_BASE_URL } from "../apiConfig";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -36,6 +38,7 @@ import {
   Zap,
   Camera,
   ScanLine,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Area,
@@ -150,7 +153,7 @@ export default function Home() {
 
   const fetchDashboardData = () => {
     if (activeNav !== "Dashboard") return;
-    axios.get("http://127.0.0.1:8000/api/dashboard-data/", {
+    axios.get(`${API_BASE_URL}/api/dashboard-data/`, {
       params: { shopkeeper_email: shopkeeper?.email }
     })
       .then(response => {
@@ -252,7 +255,7 @@ export default function Home() {
         </div>
 
         <div className="border-t border-white/10 p-4">
-          <button onClick={() => handleNav("Settings")} className="mb-2 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[13px] font-medium text-white/50 transition hover:bg-white/8 hover:text-white"><Settings2 className="h-[17px] w-[17px]" /> Settings</button>
+          <button onClick={() => handleNav("Settings")} className="mb-2 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium text-white/50 transition hover:bg-white/8 hover:text-white"><Settings2 className="h-[17px] w-[17px]" /> Settings</button>
           <div className="flex items-center gap-3 rounded-2xl bg-white/[0.06] p-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-200 to-orange-300 text-xs font-bold text-orange-800">
               {shopkeeper?.name ? shopkeeper.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() : 'SK'}
@@ -266,9 +269,29 @@ export default function Home() {
       {mobileNavOpen && <button className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm lg:hidden" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation overlay" />}
 
       <div className="lg:pl-[264px]">
-        <header className="sticky top-0 z-30 flex h-[76px] items-center gap-4 border-b border-slate-200/80 bg-white/85 px-4 backdrop-blur-xl sm:px-6 lg:px-10">
-          <button onClick={() => setMobileNavOpen(true)} className="rounded-xl border border-slate-200 p-2.5 text-slate-600 lg:hidden" aria-label="Open navigation"><Menu className="h-5 w-5" /></button>
-          <div className="relative max-w-[380px] flex-1">
+        <header className="sticky top-0 z-30 flex h-[76px] items-center gap-3 border-b border-slate-200/80 bg-white/85 px-4 backdrop-blur-xl sm:px-6 lg:px-10">
+          <button onClick={() => setMobileNavOpen(true)} className="rounded-xl border border-slate-200 p-2 text-slate-600 lg:hidden" aria-label="Open navigation"><Menu className="h-5 w-5" /></button>
+
+          {/* Mobile Store Header (Matches Phone 1, 2, 3 in screenshot) */}
+          <div className="flex items-center gap-2.5 lg:hidden min-w-0 flex-1">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-100 to-indigo-100 text-violet-700 font-bold text-xs shrink-0 border border-violet-200/60">
+              🏪
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-xs text-slate-900 truncate">
+                  {shopkeeper?.store_name || "shimadri kirana"}
+                </span>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+              </div>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                QGBI POS
+              </p>
+            </div>
+          </div>
+
+          {/* Desktop Search Bar */}
+          <div className="relative max-w-[380px] flex-1 hidden lg:block">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-[17px] w-[17px] -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products, customers, invoices…" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/80 pl-10 pr-12 text-[13px] outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100/70" />
             <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 sm:block">⌘ K</kbd>
@@ -278,7 +301,7 @@ export default function Home() {
           </div>
           <div className="ml-auto flex items-center gap-2 sm:gap-4">
             <div className="hidden items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700 sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Live sync</div>
-            <button onClick={() => toast("You're all caught up", { description: "No new notifications right now." })} className="relative rounded-xl border border-transparent p-2.5 text-slate-500 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900" aria-label="Notifications"><Bell className="h-[19px] w-[19px]" strokeWidth={1.8} /><span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-violet-500 ring-2 ring-white" /></button>
+            <button onClick={() => toast("You're all caught up", { description: "No new notifications right now." })} className="relative rounded-xl border border-transparent p-2 text-slate-500 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900" aria-label="Notifications"><Bell className="h-5 w-5" strokeWidth={1.8} /><span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-violet-500 ring-2 ring-white" /></button>
             <div className="hidden h-7 w-px bg-slate-200 sm:block" />
             <div className="relative">
               <button onClick={() => setProfileMenuOpen(!profileMenuOpen)} className="flex items-center gap-2.5 rounded-xl p-1.5 pr-2 transition hover:bg-slate-50"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-200 to-orange-300 text-xs font-bold text-orange-800">{shopkeeper?.name ? shopkeeper.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() : 'SK'}</div><div className="hidden text-left md:block"><p className="text-xs font-bold text-slate-800">{shopkeeper?.name || 'Shopkeeper'}</p><p className="text-[10px] text-slate-400">{shopkeeper?.store_name || 'Store'}</p></div><ChevronDown className="hidden h-4 w-4 text-slate-400 md:block" /></button>
@@ -303,7 +326,7 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1500px] px-4 pb-12 pt-7 sm:px-6 lg:px-10 lg:pt-9">
+        <main className="mx-auto max-w-[1500px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pt-9 lg:pb-12">
           {activeNav === "Products" && <ProductsView />}
           {activeNav === "Customers" && <CustomersView />}
           {activeNav === "Settings" && <SettingsView />}
@@ -514,6 +537,74 @@ export default function Home() {
             </>
           )}
         </main>
+
+        {/* Mobile Fixed Bottom Navigation Bar (Matches Phone 1, 2, 3 in screenshot) */}
+        <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 py-1.5 px-3 flex justify-around items-center lg:hidden shadow-lg shadow-slate-900/5">
+          {/* 1. Home */}
+          <button
+            onClick={() => handleNav("Dashboard")}
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              activeNav === "Dashboard" ? "text-violet-600" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <LayoutDashboard className="h-5 w-5" strokeWidth={activeNav === "Dashboard" ? 2.3 : 1.8} />
+            <span className="text-[10px] font-bold tracking-tight">Home</span>
+          </button>
+
+          {/* 2. Voice */}
+          <button
+            onClick={() => handleNav("Voice Billing")}
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              activeNav === "Voice Billing" ? "text-violet-600" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <div
+              className={`flex h-8 w-8 items-center justify-center rounded-full transition-all ${
+                activeNav === "Voice Billing"
+                  ? "bg-violet-600 text-white shadow-md shadow-violet-600/30"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              <Mic2 className="h-4 w-4" strokeWidth={2.2} />
+            </div>
+            <span className={`text-[10px] font-bold tracking-tight ${activeNav === "Voice Billing" ? "text-violet-600" : ""}`}>
+              Voice
+            </span>
+          </button>
+
+          {/* 3. Barcode */}
+          <button
+            onClick={() => handleNav("Barcode Billing")}
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              activeNav === "Barcode Billing" ? "text-violet-600" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <ScanLine className="h-5 w-5" strokeWidth={activeNav === "Barcode Billing" ? 2.3 : 1.8} />
+            <span className="text-[10px] font-bold tracking-tight">Barcode</span>
+          </button>
+
+          {/* 4. Photo */}
+          <button
+            onClick={() => handleNav("Image Billing")}
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              activeNav === "Image Billing" ? "text-violet-600" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <Camera className="h-5 w-5" strokeWidth={activeNav === "Image Billing" ? 2.3 : 1.8} />
+            <span className="text-[10px] font-bold tracking-tight">Photo</span>
+          </button>
+
+          {/* 5. Bills */}
+          <button
+            onClick={() => handleNav("Bills")}
+            className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
+              activeNav === "Bills" ? "text-violet-600" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <FileText className="h-5 w-5" strokeWidth={activeNav === "Bills" ? 2.3 : 1.8} />
+            <span className="text-[10px] font-bold tracking-tight">Bills</span>
+          </button>
+        </nav>
       </div>
     </div>
   );

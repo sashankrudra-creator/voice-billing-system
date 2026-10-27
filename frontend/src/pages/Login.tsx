@@ -4,6 +4,7 @@ import axios from "axios";
 import { useAuth } from "../App";
 import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
+import { API_BASE_URL } from "../apiConfig";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -20,7 +21,7 @@ export default function Login() {
     const cleanPassword = password.trim();
 
     try {
-      const response = await axios.post("http://127.0.0.1:8000/api/login/", {
+      const response = await axios.post(`${API_BASE_URL}/api/login/`, {
         email: cleanEmail,
         password: cleanPassword,
       });

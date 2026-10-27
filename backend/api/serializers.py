@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Customer, Product, Bill, HourlySales, RevenueTrend, ShopkeeperProfile, Notification
+from .models import Customer, Product, Bill, HourlySales, RevenueTrend, ShopkeeperProfile, Notification, LoginLog, ActivityLog
 
 class CustomerSerializer(serializers.ModelSerializer):
     shopkeeper = serializers.PrimaryKeyRelatedField(read_only=True)
@@ -36,3 +36,16 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = '__all__'
+
+class LoginLogSerializer(serializers.ModelSerializer):
+    shopkeeper_name = serializers.CharField(source='shopkeeper.name', read_only=True, default='')
+    class Meta:
+        model = LoginLog
+        fields = '__all__'
+
+class ActivityLogSerializer(serializers.ModelSerializer):
+    shopkeeper_name = serializers.CharField(source='shopkeeper.name', read_only=True, default='')
+    class Meta:
+        model = ActivityLog
+        fields = '__all__'
+

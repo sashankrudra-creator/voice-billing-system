@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import axios from "axios";
 import { toast } from "sonner";
+import { API_BASE_URL } from "../apiConfig";
 
 export default function Register() {
   const [, setLocation] = useLocation();
@@ -15,7 +16,7 @@ export default function Register() {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.post("http://127.0.0.1:8000/api/register/", {
+      const response = await axios.post(`${API_BASE_URL}/api/register/`, {
         name,
         email,
         password,

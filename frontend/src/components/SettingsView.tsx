@@ -3,6 +3,7 @@ import { useAuth } from "../App";
 import { toast } from "sonner";
 import axios from "axios";
 import { User, Store, Mail, Phone, Lock, Save, Shield, Bell, Palette } from "lucide-react";
+import { API_BASE_URL } from "../apiConfig";
 
 export default function SettingsView() {
   const { shopkeeper, login } = useAuth();
@@ -28,7 +29,7 @@ export default function SettingsView() {
         ...formData
       };
       
-      const res = await axios.post("http://127.0.0.1:8000/api/update-profile/", payload);
+      const res = await axios.post(`${API_BASE_URL}/api/update-profile/`, payload);
       
       if (res.data.success) {
         // Update the auth context with the new shopkeeper details
