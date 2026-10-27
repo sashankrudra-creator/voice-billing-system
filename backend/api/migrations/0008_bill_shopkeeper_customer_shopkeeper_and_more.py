@@ -14,32 +14,32 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='bill',
             name='shopkeeper',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='bills', to='api.shopkeeperprofile'),
+            field=models.ForeignKey(blank=True, db_constraint=False, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='bills', to='api.shopkeeperprofile'),
         ),
         migrations.AddField(
             model_name='customer',
             name='shopkeeper',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='customers', to='api.shopkeeperprofile'),
+            field=models.ForeignKey(blank=True, db_constraint=False, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='customers', to='api.shopkeeperprofile'),
         ),
         migrations.AddField(
             model_name='hourlysales',
             name='shopkeeper',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='hourly_sales', to='api.shopkeeperprofile'),
+            field=models.ForeignKey(blank=True, db_constraint=False, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='hourly_sales', to='api.shopkeeperprofile'),
         ),
         migrations.AddField(
             model_name='notification',
             name='shopkeeper',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='notifications', to='api.shopkeeperprofile'),
+            field=models.ForeignKey(blank=True, db_constraint=False, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='notifications', to='api.shopkeeperprofile'),
         ),
         migrations.AddField(
             model_name='product',
             name='shopkeeper',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='products', to='api.shopkeeperprofile'),
+            field=models.ForeignKey(blank=True, db_constraint=False, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='products', to='api.shopkeeperprofile'),
         ),
         migrations.AddField(
             model_name='revenuetrend',
             name='shopkeeper',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='revenue_trends', to='api.shopkeeperprofile'),
+            field=models.ForeignKey(blank=True, db_constraint=False, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='revenue_trends', to='api.shopkeeperprofile'),
         ),
         migrations.AddField(
             model_name='shopkeeperprofile',
