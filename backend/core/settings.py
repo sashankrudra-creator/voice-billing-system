@@ -103,10 +103,18 @@ if DATABASE_URL:
             'OPTIONS': {},
         }
     }
-    if os.getenv('DB_SSL_CA'):
-        DATABASES['default']['OPTIONS']['ssl'] = {'ca': os.getenv('DB_SSL_CA')}
-    elif os.getenv('DB_SSL_MODE') == 'REQUIRED' or os.getenv('MYSQL_SSL', '').lower() in ('true', '1', 'required'):
-        DATABASES['default']['OPTIONS']['ssl'] = {'ssl_mode': 'REQUIRED'}
+    db_options = {}
+    if 'tidbcloud' in (DATABASE_URL or '') or os.getenv('MYSQL_SSL', '').lower() in ('true', '1', 'required'):
+        ca_path = os.getenv('DB_SSL_CA', '/etc/ssl/certs/ca-certificates.crt')
+        if os.path.exists(ca_path):
+            db_options['ssl'] = {'ca': ca_path}
+        else:
+            db_options['ssl_verify_cert'] = False
+            db_options['ssl_verify_identity'] = False
+    elif os.getenv('DB_SSL_CA'):
+        db_options['ssl'] = {'ca': os.getenv('DB_SSL_CA')}
+
+    DATABASES['default']['OPTIONS'] = db_options
 else:
     db_options = {}
     if os.getenv('DB_SSL_CA'):
