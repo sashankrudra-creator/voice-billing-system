@@ -44,8 +44,7 @@ export default function VoiceBilling() {
   const [items, setItems] = useState<any[]>([]);
   const [error, setError] = useState("");
   const recognitionRef = useRef<any>(null);
-  const accumulatedTranscriptRef = useRef("");
-  const lastProcessedIndexRef = useRef(-1);
+  const baseTranscriptRef = useRef("");
   const isManuallyStoppedRef = useRef(false);
 
   // Billing & WhatsApp State
@@ -72,63 +71,48 @@ export default function VoiceBilling() {
       recognition.onstart = () => {
         setIsRecording(true);
         setError("");
-        lastProcessedIndexRef.current = -1;
       };
 
       recognition.onresult = (event: any) => {
-        let interimTranscript = "";
-        let newFinals = "";
+        let sessionFinal = "";
+        let sessionInterim = "";
 
-        // On mobile Chrome, event.resultIndex may reset to 0 or re-emit past finals.
-        // We track lastProcessedIndexRef so completed final results are only processed once.
+        // Reconstruct from event.results directly (the browser's authoritative, non-duplicated list)
         for (let i = 0; i < event.results.length; i++) {
+          const piece = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            if (i > lastProcessedIndexRef.current) {
-              const piece = event.results[i][0].transcript.trim();
-              if (piece) {
-                newFinals += piece + " ";
-              }
-              lastProcessedIndexRef.current = i;
-            }
+            sessionFinal += piece + " ";
           } else {
-            interimTranscript += event.results[i][0].transcript + " ";
+            sessionInterim += piece;
           }
         }
 
-        if (newFinals.trim()) {
-          const cleanedFinal = cleanSpeechTranscript(newFinals.trim());
-          const current = accumulatedTranscriptRef.current.trim();
-          // Avoid appending if the newly finalized chunk is identical to the end of accumulated string
-          if (!current.endsWith(cleanedFinal)) {
-            accumulatedTranscriptRef.current = current ? `${current} ${cleanedFinal}` : cleanedFinal;
-          }
-        }
-
-        const fullRaw = (accumulatedTranscriptRef.current + " " + interimTranscript).trim();
-        const deduped = deduplicateSpokenWords(fullRaw);
-        setTranscript(cleanSpeechTranscript(deduped));
+        const base = baseTranscriptRef.current.trim();
+        const currentSession = (sessionFinal + " " + sessionInterim).trim();
+        const fullCombined = base ? `${base} ${currentSession}` : currentSession;
+        const cleaned = cleanSpeechTranscript(deduplicateSpokenWords(fullCombined));
+        setTranscript(cleaned);
       };
 
       recognition.onerror = (event: any) => {
         console.error("Speech recognition error", event.error);
         if (event.error === 'not-allowed') {
             setError("Microphone access was denied. Please allow microphone access to use voice billing.");
-        } else {
+        } else if (event.error !== 'no-speech') {
             setError(`Speech recognition error: ${event.error}`);
         }
         setIsRecording(false);
       };
 
       recognition.onend = () => {
-        // Reset processed index for next session
-        lastProcessedIndexRef.current = -1;
-        if (!isManuallyStoppedRef.current) {
-            try {
-                recognition.start();
-            } catch (err) {}
-        } else {
-            setIsRecording(false);
-        }
+        // Natural end of speech: cleanly stop recording.
+        // DO NOT auto-restart in a loop, which caused the mobile multiple-input bug!
+        setIsRecording(false);
+        setTranscript(prev => {
+          const finalCleaned = cleanSpeechTranscript(deduplicateSpokenWords(prev));
+          baseTranscriptRef.current = finalCleaned;
+          return finalCleaned;
+        });
       };
 
       recognitionRef.current = recognition;
@@ -144,12 +128,18 @@ export default function VoiceBilling() {
   }, []);
 
   const startRecording = () => {
-    setTranscript("");
-    setBillingData(null);
-    setItems([]);
+    // If starting fresh with items already processed, clear previous bill
+    if (items.length > 0) {
+      setBillingData(null);
+      setItems([]);
+      setTranscript("");
+      baseTranscriptRef.current = "";
+    } else {
+      // If adding more speech to an existing prompt, keep existing text as base
+      baseTranscriptRef.current = transcript.trim();
+    }
+
     setError("");
-    accumulatedTranscriptRef.current = "";
-    lastProcessedIndexRef.current = -1;
     isManuallyStoppedRef.current = false;
     
     if (recognitionRef.current) {
@@ -163,13 +153,17 @@ export default function VoiceBilling() {
 
   const stopRecording = () => {
     isManuallyStoppedRef.current = true;
-    lastProcessedIndexRef.current = -1;
+    setIsRecording(false);
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
       } catch (e) {}
     }
-    setTranscript(prev => cleanSpeechTranscript(deduplicateSpokenWords(prev)));
+    setTranscript(prev => {
+      const finalCleaned = cleanSpeechTranscript(deduplicateSpokenWords(prev));
+      baseTranscriptRef.current = finalCleaned;
+      return finalCleaned;
+    });
   };
 
   const processBill = async () => {
