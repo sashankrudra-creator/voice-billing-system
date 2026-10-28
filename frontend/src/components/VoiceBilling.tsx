@@ -7,12 +7,27 @@ import { useAuth } from "../App";
 import PaymentModal from "./PaymentModal";
 import { API_BASE_URL } from "../apiConfig";
 
+// De-duplicates immediate consecutive duplicate words & phrases (prevents mobile speech repetition bug)
+function deduplicateSpokenWords(text: string): string {
+  if (!text) return "";
+  let s = text.trim();
+  // 1. Single-word duplicates: e.g. "3 3 3 3" -> "3", "5 5" -> "5", "milk milk" -> "milk"
+  s = s.replace(/\b(\w+)(?:\s+\1\b)+/gi, (_match, p1) => p1);
+  // 2. Two-word phrase duplicates: e.g. "3 kg 3 kg 3 kg" -> "3 kg"
+  s = s.replace(/\b(\w+\s+\w+)(?:\s+\1\b)+/gi, (_match, p1) => p1);
+  // 3. Three-word phrase duplicates: e.g. "two packets rice two packets rice" -> "two packets rice"
+  s = s.replace(/\b(\w+\s+\w+\s+\w+)(?:\s+\1\b)+/gi, (_match, p1) => p1);
+  return s.replace(/\s+/g, " ").trim();
+}
+
 // Normalizes common Indian speech mishearings
 function cleanSpeechTranscript(raw: string): string {
   if (!raw) return "";
   let s = raw;
   // Replace "latest", "letters", "litters" with "liters"
   s = s.replace(/\b(latest|letter|letters|litter|litters|latter)\b/gi, "liters");
+  // Spoken South Indian grocery words: e.g. "skandapoo" -> "Kandi Pappu"
+  s = s.replace(/\b(skandapoo|skanda\s*poo|kanth\s*pappu|kandi\s*pappu|kandipappu)\b/gi, "Kandi Pappu");
   // Replace "to/too liters/kg" with "2 liters/kg"
   s = s.replace(/\b(?:to|too)\s+(liters?|litres?|kgs?|kilos?|packets?|packs?|pieces?|pcs?|bottles?|tins?|[a-z]+)\b/gi, "2 $1");
   // Replace "for/fore liters" with "4 liters"
@@ -30,6 +45,7 @@ export default function VoiceBilling() {
   const [error, setError] = useState("");
   const recognitionRef = useRef<any>(null);
   const accumulatedTranscriptRef = useRef("");
+  const lastProcessedIndexRef = useRef(-1);
   const isManuallyStoppedRef = useRef(false);
 
   // Billing & WhatsApp State
@@ -56,25 +72,41 @@ export default function VoiceBilling() {
       recognition.onstart = () => {
         setIsRecording(true);
         setError("");
+        lastProcessedIndexRef.current = -1;
       };
 
       recognition.onresult = (event: any) => {
         let interimTranscript = "";
         let newFinals = "";
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+
+        // On mobile Chrome, event.resultIndex may reset to 0 or re-emit past finals.
+        // We track lastProcessedIndexRef so completed final results are only processed once.
+        for (let i = 0; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
-            newFinals += event.results[i][0].transcript + " ";
+            if (i > lastProcessedIndexRef.current) {
+              const piece = event.results[i][0].transcript.trim();
+              if (piece) {
+                newFinals += piece + " ";
+              }
+              lastProcessedIndexRef.current = i;
+            }
           } else {
-            interimTranscript += event.results[i][0].transcript;
+            interimTranscript += event.results[i][0].transcript + " ";
           }
         }
-        
-        if (newFinals) {
-            accumulatedTranscriptRef.current += cleanSpeechTranscript(newFinals);
+
+        if (newFinals.trim()) {
+          const cleanedFinal = cleanSpeechTranscript(newFinals.trim());
+          const current = accumulatedTranscriptRef.current.trim();
+          // Avoid appending if the newly finalized chunk is identical to the end of accumulated string
+          if (!current.endsWith(cleanedFinal)) {
+            accumulatedTranscriptRef.current = current ? `${current} ${cleanedFinal}` : cleanedFinal;
+          }
         }
-        
-        setTranscript(cleanSpeechTranscript(accumulatedTranscriptRef.current + interimTranscript));
+
+        const fullRaw = (accumulatedTranscriptRef.current + " " + interimTranscript).trim();
+        const deduped = deduplicateSpokenWords(fullRaw);
+        setTranscript(cleanSpeechTranscript(deduped));
       };
 
       recognition.onerror = (event: any) => {
@@ -88,6 +120,8 @@ export default function VoiceBilling() {
       };
 
       recognition.onend = () => {
+        // Reset processed index for next session
+        lastProcessedIndexRef.current = -1;
         if (!isManuallyStoppedRef.current) {
             try {
                 recognition.start();
@@ -115,6 +149,7 @@ export default function VoiceBilling() {
     setItems([]);
     setError("");
     accumulatedTranscriptRef.current = "";
+    lastProcessedIndexRef.current = -1;
     isManuallyStoppedRef.current = false;
     
     if (recognitionRef.current) {
@@ -128,9 +163,13 @@ export default function VoiceBilling() {
 
   const stopRecording = () => {
     isManuallyStoppedRef.current = true;
+    lastProcessedIndexRef.current = -1;
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
     }
+    setTranscript(prev => cleanSpeechTranscript(deduplicateSpokenWords(prev)));
   };
 
   const processBill = async () => {

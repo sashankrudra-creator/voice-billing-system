@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { Html5Qrcode } from "html5-qrcode";
 import { BrowserMultiFormatReader } from "@zxing/library";
-import { ScanLine, Trash2, Send, CheckCircle2, AlertCircle, Upload, Image as ImageIcon, Crop as CropIcon, Download, Eye, Loader2 } from "lucide-react";
+import { ScanLine, Trash2, Send, CheckCircle2, AlertCircle, Upload, Image as ImageIcon, Crop as CropIcon, Download, Eye, Loader2, SwitchCamera } from "lucide-react";
 import { toast } from "sonner";
 import QRCode from "react-qr-code";
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
@@ -23,6 +23,12 @@ export default function BarcodeBilling() {
   const [autoResumeCamera, setAutoResumeCamera] = useState(false);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
   
+  // Camera selection state: Default to Back Camera ("environment") on phones
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [currentCameraIndex, setCurrentCameraIndex] = useState(0);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+
   // Cropping State
   const [imgSrc, setImgSrc] = useState("");
   const [crop, setCrop] = useState<Crop>();
@@ -50,38 +56,73 @@ export default function BarcodeBilling() {
 
   useEffect(() => {
       let html5QrCode: Html5Qrcode | null = null;
+      let isMounted = true;
       
       if (scanning) {
           html5QrCode = new Html5Qrcode("reader");
+          scannerRef.current = html5QrCode;
           
+          // Enumerate available cameras
+          Html5Qrcode.getCameras().then(devices => {
+              if (devices && devices.length > 0 && isMounted) {
+                  setCameras(devices);
+              }
+          }).catch(console.error);
+
+          // Use specific camera device ID if selected, otherwise use facingMode (environment = Back camera)
+          const cameraConfig = (cameras.length > 0 && cameras[currentCameraIndex])
+              ? cameras[currentCameraIndex].id
+              : { facingMode: facingMode };
+
           html5QrCode.start(
-              { facingMode: "user" }, // "user" forces front camera/webcam
+              cameraConfig,
               {
                   fps: 10,
-                  // Removed qrbox to allow scanning the entire frame, much easier for laptops
               },
               onScanSuccess,
               onScanFailure
           ).catch(err => {
-              console.error("Front camera failed, trying environment", err);
+              console.warn(`Camera start failed with requested mode (${facingMode}), trying fallback...`, err);
+              // Fallback to opposite facing mode (e.g. laptop webcam if back camera is not available)
+              const fallbackMode = facingMode === "environment" ? "user" : "environment";
               html5QrCode?.start(
-                  { facingMode: "environment" },
+                  { facingMode: fallbackMode },
                   { fps: 10 },
                   onScanSuccess,
                   onScanFailure
-              ).catch(e => {
-                  toast.error("Could not start camera.");
-                  setScanning(false);
+              ).then(() => {
+                  if (isMounted) setFacingMode(fallbackMode);
+              }).catch(e => {
+                  console.error("Camera start failed completely", e);
+                  if (isMounted) {
+                      toast.error("Could not start camera. Please verify permissions.");
+                      setScanning(false);
+                  }
               });
           });
       }
 
       return () => {
+          isMounted = false;
           if (html5QrCode && html5QrCode.isScanning) {
               html5QrCode.stop().then(() => html5QrCode.clear()).catch(console.error);
           }
+          scannerRef.current = null;
       };
-  }, [scanning]);
+  }, [scanning, facingMode, currentCameraIndex]);
+
+  const handleToggleCamera = () => {
+      if (cameras.length > 1) {
+          const nextIdx = (currentCameraIndex + 1) % cameras.length;
+          setCurrentCameraIndex(nextIdx);
+          const cam = cameras[nextIdx];
+          toast.info(`Switched to: ${cam.label || `Camera ${nextIdx + 1}`}`);
+      } else {
+          const nextMode = facingMode === "environment" ? "user" : "environment";
+          setFacingMode(nextMode);
+          toast.info(nextMode === "environment" ? "Switched to Back Camera" : "Switched to Front Camera");
+      }
+  };
 
   const playBeep = () => {
       const context = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -484,24 +525,51 @@ export default function BarcodeBilling() {
                         </label>
                     </div>
                 ) : (
-                    <div className="w-full max-w-md space-y-4">
-                        <div id="reader" className="w-full overflow-hidden rounded-2xl border-4 border-slate-100 shadow-lg bg-black"></div>
-                        <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="w-full max-w-md space-y-3">
+                        {/* Camera status badge & Flip Camera button */}
+                        <div className="flex items-center justify-between px-1">
+                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                                <ScanLine className="h-3.5 w-3.5" />
+                                {cameras.length > 0 && cameras[currentCameraIndex]
+                                    ? (cameras[currentCameraIndex].label || (facingMode === "environment" ? "Back Camera" : "Front Camera"))
+                                    : (facingMode === "environment" ? "Back Camera (Default)" : "Front Camera")}
+                            </span>
                             <button 
-                                onClick={() => setScanning(false)}
-                                className="w-full rounded-xl bg-slate-900 py-3.5 text-sm font-bold text-white shadow-lg transition hover:bg-slate-800"
+                                type="button"
+                                onClick={handleToggleCamera}
+                                className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-white hover:bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700 shadow-sm transition active:scale-95"
+                                title="Flip to front or back camera"
                             >
-                                Stop Camera
+                                <SwitchCamera className="h-3.5 w-3.5 text-indigo-600" />
+                                <span>Flip Camera</span>
+                            </button>
+                        </div>
+
+                        <div id="reader" className="w-full overflow-hidden rounded-2xl border-4 border-slate-100 shadow-lg bg-black"></div>
+                        
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                            <button 
+                                type="button"
+                                onClick={handleToggleCamera}
+                                className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 py-3 text-xs sm:text-sm font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-100 active:scale-95"
+                            >
+                                <SwitchCamera className="h-4 w-4" /> Flip Camera
                             </button>
                             <button 
                                 onClick={handleCaptureFrame}
-                                className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-600/30 transition hover:bg-indigo-700 flex justify-center items-center gap-2"
+                                className="flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-3 text-xs sm:text-sm font-bold text-white shadow-lg shadow-indigo-600/30 transition hover:bg-indigo-700 active:scale-95"
                             >
                                 <CropIcon className="h-4 w-4" /> Capture & Crop
                             </button>
+                            <button 
+                                onClick={() => setScanning(false)}
+                                className="col-span-2 sm:col-span-1 rounded-xl bg-slate-900 py-3 text-xs sm:text-sm font-bold text-white shadow-lg transition hover:bg-slate-800 active:scale-95"
+                            >
+                                Stop Camera
+                            </button>
                         </div>
                         <div className="flex justify-center">
-                            <label className="w-full rounded-xl bg-white border-2 border-slate-200 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer flex justify-center items-center gap-2">
+                            <label className="w-full rounded-xl bg-white border border-slate-200 py-3 text-xs sm:text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer flex justify-center items-center gap-2">
                                 <Upload className="h-4 w-4" /> Upload Instead
                                 <input 
                                     type="file" 

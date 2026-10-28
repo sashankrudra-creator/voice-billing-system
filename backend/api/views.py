@@ -457,9 +457,24 @@ class BillViewSet(viewsets.ModelViewSet):
                     print("Error updating product sold count:", str(e))
 
 
+def deduplicate_spoken_words(s):
+    if not s:
+        return ""
+    # 1. Single word duplicates: "3 3 3 3" -> "3", "5 5" -> "5"
+    s = re.sub(r'\b(\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+    # 2. Two-word phrase duplicates: "3 kg 3 kg 3 kg" -> "3 kg"
+    s = re.sub(r'\b(\w+\s+\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+    # 3. Three-word phrase duplicates
+    s = re.sub(r'\b(\w+\s+\w+\s+\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+    return re.sub(r'\s+', ' ', s).strip()
+
+
 def parse_voice_text_locally(text):
+    # De-duplicate any stuttered words/phrases from mobile speech recognition
+    deduped = deduplicate_spoken_words(text)
     # Phonetic normalization for Indian speech
-    norm_text = re.sub(r'\b(latest|letter|letters|litter|litters|latter)\b', 'liters', text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'\b(latest|letter|letters|litter|litters|latter)\b', 'liters', deduped, flags=re.IGNORECASE)
+    norm_text = re.sub(r'\b(skandapoo|skanda\s*poo|kanth\s*pappu|kandi\s*pappu|kandipappu)\b', 'Kandi Pappu', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\b(to|too)\s+(liters?|litres?|kgs?|kilos?|packets?|packs?|pieces?|pcs?|bottles?|tins?|[a-zA-Z]+)\b', r'2 \2', norm_text, flags=re.IGNORECASE)
     norm_text = re.sub(r'\b(for|fore)\s+(liters?|litres?|kgs?|kilos?|packets?|packs?|pieces?|pcs?|bottles?|tins?)\b', r'4 \2', norm_text, flags=re.IGNORECASE)
     clean_text = norm_text.replace('₹', ' rs ').replace('Rs.', ' rs ').replace('rs.', ' rs ').replace(',', ' ')
@@ -533,8 +548,12 @@ class VoiceBillingView(APIView):
         if not raw_text:
             return Response({"success": False, "error": "No text provided"}, status=400)
 
+        # De-duplicate any stuttered words/phrases from mobile speech recognition
+        deduped = deduplicate_spoken_words(raw_text)
+
         # Phonetic clean up for Indian accent speech
-        text = re.sub(r'\b(latest|letter|letters|litter|litters|latter)\b', 'liters', raw_text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(latest|letter|letters|litter|litters|latter)\b', 'liters', deduped, flags=re.IGNORECASE)
+        text = re.sub(r'\b(skandapoo|skanda\s*poo|kanth\s*pappu|kandi\s*pappu|kandipappu)\b', 'Kandi Pappu', text, flags=re.IGNORECASE)
         text = re.sub(r'\b(to|too)\s+(liters?|litres?|kgs?|kilos?|packets?|packs?|pieces?|pcs?|bottles?|tins?|[a-zA-Z]+)\b', r'2 \2', text, flags=re.IGNORECASE)
         text = re.sub(r'\b(for|fore)\s+(liters?|litres?|kgs?|kilos?|packets?|packs?|pieces?|pcs?|bottles?|tins?)\b', r'4 \2', text, flags=re.IGNORECASE)
 
@@ -555,9 +574,9 @@ Transcript: "{text}"
 Indian Accent & Grocery Guidelines:
 - "latest", "letters", "litters" means "liters" (e.g. "two latest milk" or "2 liters milk" -> product: "Milk", quantity: 2).
 - "to" or "too" before a unit or item means the number 2 (e.g. "to liters" -> 2 liters).
-- Indian grocery terms: "Kandi pappu" / "Kanth pappu" -> Toor Dal / Kandi Pappu, "Atta" -> Wheat Flour / Atta.
+- Indian grocery terms: "Kandi pappu" / "Kanth pappu" / "skandapoo" -> Toor Dal / Kandi Pappu, "Atta" -> Wheat Flour / Atta.
 - If a price is mentioned (e.g. "for 120", "at 60 rupees", "rs 50"), calculate total = quantity * unit_price.
-- If NO price is mentioned in the speech (e.g. "two liters milk" or "1 kg sugar"), still extract the product and quantity! Set unit_price to 0 and total to 0.
+- If NO price is mentioned in the speech (e.g. "two liters milk" or "3 kg kandi pappu"), still extract the product and quantity! Set unit_price to 0 and total to 0.
 
 Respond strictly in valid JSON format like this:
 {{
