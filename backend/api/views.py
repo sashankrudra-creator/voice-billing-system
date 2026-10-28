@@ -460,12 +460,26 @@ class BillViewSet(viewsets.ModelViewSet):
 def deduplicate_spoken_words(s):
     if not s:
         return ""
-    # 1. Single word duplicates: "3 3 3 3" -> "3", "5 5" -> "5"
-    s = re.sub(r'\b(\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
-    # 2. Two-word phrase duplicates: "3 kg 3 kg 3 kg" -> "3 kg"
-    s = re.sub(r'\b(\w+\s+\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
-    # 3. Three-word phrase duplicates
-    s = re.sub(r'\b(\w+\s+\w+\s+\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+    s = s.strip()
+    # Loop until stable to eliminate chained / nested speech recognition repetitions
+    for _ in range(6):
+        prev = s
+        # 6-word phrase duplicates
+        s = re.sub(r'\b(\w+\s+\w+\s+\w+\s+\w+\s+\w+\s+\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+        # 5-word phrase duplicates
+        s = re.sub(r'\b(\w+\s+\w+\s+\w+\s+\w+\s+\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+        # 4-word phrase duplicates
+        s = re.sub(r'\b(\w+\s+\w+\s+\w+\s+\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+        # 3-word phrase duplicates: e.g. "kandi pappu 150 kandi pappu 150"
+        s = re.sub(r'\b(\w+\s+\w+\s+\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+        # 2-word phrase duplicates: e.g. "3 kg 3 kg", "50 rupees 50 rupees", "150 rs 150 rs"
+        s = re.sub(r'\b(\w+\s+\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+        # Numeric & price repeats: e.g. "150 150", "50 50 rupees", "rs rs"
+        s = re.sub(r'\b(\d+\s*(?:rs|rupees|inr|kg|kgs|liters?|litres?|l|packets?|packs?|pieces?|pcs?)?)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+        # Single word duplicates: "3 3 3 3" -> "3", "5 5" -> "5", "milk milk" -> "milk"
+        s = re.sub(r'\b(\w+)(?:\s+\1\b)+', r'\1', s, flags=re.IGNORECASE)
+        if s == prev:
+            break
     return re.sub(r'\s+', ' ', s).strip()
 
 

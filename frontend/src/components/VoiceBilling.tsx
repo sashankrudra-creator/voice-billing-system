@@ -11,12 +11,26 @@ import { API_BASE_URL } from "../apiConfig";
 function deduplicateSpokenWords(text: string): string {
   if (!text) return "";
   let s = text.trim();
-  // 1. Single-word duplicates: e.g. "3 3 3 3" -> "3", "5 5" -> "5", "milk milk" -> "milk"
-  s = s.replace(/\b(\w+)(?:\s+\1\b)+/gi, (_match, p1) => p1);
-  // 2. Two-word phrase duplicates: e.g. "3 kg 3 kg 3 kg" -> "3 kg"
-  s = s.replace(/\b(\w+\s+\w+)(?:\s+\1\b)+/gi, (_match, p1) => p1);
-  // 3. Three-word phrase duplicates: e.g. "two packets rice two packets rice" -> "two packets rice"
-  s = s.replace(/\b(\w+\s+\w+\s+\w+)(?:\s+\1\b)+/gi, (_match, p1) => p1);
+  let prev = "";
+  // Run loop until stable to eliminate nested/chained repeats
+  for (let iter = 0; iter < 6; iter++) {
+    prev = s;
+    // 6-word phrase duplicates
+    s = s.replace(/\b(\w+\s+\w+\s+\w+\s+\w+\s+\w+\s+\w+)(?:\s+\1\b)+/gi, "$1");
+    // 5-word phrase duplicates
+    s = s.replace(/\b(\w+\s+\w+\s+\w+\s+\w+\s+\w+)(?:\s+\1\b)+/gi, "$1");
+    // 4-word phrase duplicates
+    s = s.replace(/\b(\w+\s+\w+\s+\w+\s+\w+)(?:\s+\1\b)+/gi, "$1");
+    // 3-word phrase duplicates: e.g. "kandi pappu 150 kandi pappu 150"
+    s = s.replace(/\b(\w+\s+\w+\s+\w+)(?:\s+\1\b)+/gi, "$1");
+    // 2-word phrase duplicates: e.g. "3 kg 3 kg", "50 rupees 50 rupees", "150 rs 150 rs"
+    s = s.replace(/\b(\w+\s+\w+)(?:\s+\1\b)+/gi, "$1");
+    // Numeric & price repeats: e.g. "150 150", "50 50 rupees", "rs rs"
+    s = s.replace(/\b(\d+\s*(?:rs|rupees|inr|kg|kgs|liters?|litres?|l|packets?|packs?|pieces?|pcs?)?)(?:\s+\1\b)+/gi, "$1");
+    // 1-word duplicates: e.g. "3 3 3 3" -> "3", "5 5" -> "5", "milk milk" -> "milk"
+    s = s.replace(/\b(\w+)(?:\s+\1\b)+/gi, "$1");
+    if (s === prev) break;
+  }
   return s.replace(/\s+/g, " ").trim();
 }
 
@@ -62,9 +76,12 @@ export default function VoiceBilling() {
     // Check if browser supports SpeechRecognition
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
+      const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
+      // On mobile (especially Android Chrome), continuous + interimResults produces duplicate results & repeated words
+      // Disabling continuous and interimResults on mobile eliminates the duplicate hypotheses bug completely.
+      recognition.continuous = !isMobile;
+      recognition.interimResults = !isMobile;
       // Use en-IN for Indian accent recognition
       recognition.lang = 'en-IN';
 
@@ -74,22 +91,33 @@ export default function VoiceBilling() {
       };
 
       recognition.onresult = (event: any) => {
-        let sessionFinal = "";
-        let sessionInterim = "";
+        let currentFinal = "";
+        let currentInterim = "";
 
-        // Reconstruct from event.results directly (the browser's authoritative, non-duplicated list)
-        for (let i = 0; i < event.results.length; i++) {
-          const piece = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            sessionFinal += piece + " ";
-          } else {
-            sessionInterim += piece;
+        if (isMobile) {
+          // On mobile Android Chrome, find the latest authoritative transcript to avoid stacking interim guesses
+          for (let i = event.results.length - 1; i >= 0; i--) {
+            const piece = event.results[i][0]?.transcript || "";
+            if (piece.trim()) {
+              currentFinal = piece.trim();
+              break;
+            }
+          }
+        } else {
+          // On desktop, assemble from event.results sequentially
+          for (let i = 0; i < event.results.length; i++) {
+            const piece = event.results[i][0]?.transcript || "";
+            if (event.results[i].isFinal) {
+              currentFinal += piece + " ";
+            } else {
+              currentInterim += piece;
+            }
           }
         }
 
         const base = baseTranscriptRef.current.trim();
-        const currentSession = (sessionFinal + " " + sessionInterim).trim();
-        const fullCombined = base ? `${base} ${currentSession}` : currentSession;
+        const sessionText = (currentFinal + " " + currentInterim).trim();
+        const fullCombined = base ? `${base} ${sessionText}` : sessionText;
         const cleaned = cleanSpeechTranscript(deduplicateSpokenWords(fullCombined));
         setTranscript(cleaned);
       };
@@ -201,6 +229,7 @@ export default function VoiceBilling() {
 
   const handleClear = () => {
       setTranscript("");
+      baseTranscriptRef.current = "";
       setBillingData(null);
       setItems([]);
       setBillCustomerName("");
