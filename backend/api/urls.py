@@ -4,7 +4,8 @@ from .views import (
     DashboardDataView, LoginView, RegisterView, UpdateProfileView,
     CustomerViewSet, ProductViewSet, BillViewSet,
     VoiceBillingView, ImageBillingView, GenerateBillView,
-    AdminAuthView, AdminOverviewView
+    AdminAuthView, AdminOverviewView,
+    GeneratePDFBillView, DownloadBillPDFView
 )
 
 router = DefaultRouter()
@@ -21,6 +22,8 @@ urlpatterns = [
     path('voice-billing/', VoiceBillingView.as_view(), name='voice-billing'),
     path('image-billing/', ImageBillingView.as_view(), name='image-billing'),
     path('generate-bill/', GenerateBillView.as_view(), name='generate-bill'),
+    path('generate-pdf-bill/', GeneratePDFBillView.as_view(), name='generate-pdf-bill'),
+    path('bills/<int:bill_id>/pdf/', DownloadBillPDFView.as_view(), name='download-bill-pdf'),
     path('admin-auth/', AdminAuthView.as_view(), name='admin-auth'),
     path('admin-overview/', AdminOverviewView.as_view(), name='admin-overview'),
     path('', include(router.urls)),

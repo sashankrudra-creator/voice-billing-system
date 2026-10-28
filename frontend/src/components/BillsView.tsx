@@ -21,6 +21,33 @@ export default function BillsView() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Paid' | 'Pending'>('All');
   const [selectedBill, setSelectedBill] = useState<any | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | string | null>(null);
+
+  const handleDownloadBillPDF = async (bill: any) => {
+    setDownloadingId(bill.id || bill.invoice);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/bills/${bill.id}/pdf/`, {
+        params: { shopkeeper_email: shopkeeper?.email },
+        responseType: 'blob'
+      });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      const safeInv = String(bill.invoice).replace('#', '').replace(' ', '_');
+      a.download = `QuantumVoice_Invoice_${safeInv}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      toast.success(`Downloaded PDF for ${bill.invoice}`);
+    } catch (err) {
+      console.error('Failed to download bill PDF', err);
+      toast.error('Failed to download PDF invoice.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
   
   const [formData, setFormData] = useState({
     invoice: '',
@@ -263,13 +290,23 @@ export default function BillsView() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-right sm:px-6">
-                      <button
-                        onClick={() => setSelectedBill(bill)}
-                        className="rounded-lg p-2 text-slate-400 transition hover:bg-violet-50 hover:text-violet-600"
-                        title="View bill details"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => handleDownloadBillPDF(bill)}
+                          disabled={downloadingId === (bill.id || bill.invoice)}
+                          className="rounded-lg p-2 text-slate-400 transition hover:bg-violet-50 hover:text-violet-600 disabled:opacity-50"
+                          title="Download PDF Invoice"
+                        >
+                          <Download className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setSelectedBill(bill)}
+                          className="rounded-lg p-2 text-slate-400 transition hover:bg-violet-50 hover:text-violet-600"
+                          title="View bill details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -323,10 +360,17 @@ export default function BillsView() {
                 </span>
               </div>
             </div>
-            <div className="border-t border-slate-100 px-6 py-4">
+            <div className="border-t border-slate-100 px-6 py-4 flex gap-3">
+              <button
+                onClick={() => handleDownloadBillPDF(selectedBill)}
+                disabled={downloadingId === (selectedBill.id || selectedBill.invoice)}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-violet-700 shadow-md shadow-violet-600/20 disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" /> Download PDF
+              </button>
               <button
                 onClick={() => setSelectedBill(null)}
-                className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800"
+                className="flex-1 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-200"
               >
                 Close
               </button>

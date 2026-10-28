@@ -1,16 +1,19 @@
 import os
+import re
 import json
 import base64
+from datetime import datetime, timedelta
 
+from django.http import HttpResponse
 from qiskit import QuantumCircuit
 from qiskit.primitives import StatevectorSampler as Sampler
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework import serializers, viewsets
 from .models import Customer, Product, Bill, HourlySales, RevenueTrend, ShopkeeperProfile, Notification, LoginLog, ActivityLog
 from .serializers import CustomerSerializer, ProductSerializer, BillSerializer, HourlySalesSerializer, RevenueTrendSerializer, LoginLogSerializer, ActivityLogSerializer
-from rest_framework import serializers
-from datetime import datetime, timedelta
+from .pdf_service import generate_invoice_pdf
 
 def get_client_ip(request):
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -391,13 +394,14 @@ class BillViewSet(viewsets.ModelViewSet):
         shopkeeper = get_current_shopkeeper(self.request)
         bill = serializer.save(shopkeeper=shopkeeper)
         ip = get_client_ip(self.request)
+        items = self.request.data.get('items', [])
         ActivityLog.objects.create(
             shopkeeper=shopkeeper,
             store_name=shopkeeper.store_name if shopkeeper else 'Store',
             action_type='BILL_CREATED',
             title=f"Bill Generated #{bill.invoice} - {bill.amount}",
             description=f"Customer: {bill.customer} • Status: {bill.status}",
-            metadata={'invoice': bill.invoice, 'amount': bill.amount, 'customer': bill.customer},
+            metadata={'invoice': bill.invoice, 'amount': bill.amount, 'customer': bill.customer, 'items': items},
             ip_address=ip
         )
         customer_name = bill.customer
@@ -454,11 +458,15 @@ class BillViewSet(viewsets.ModelViewSet):
 
 
 def parse_voice_text_locally(text):
-    import re
-    clean_text = text.replace('₹', ' rs ').replace('Rs.', ' rs ').replace('rs.', ' rs ').replace(',', ' ')
+    # Phonetic normalization for Indian speech
+    norm_text = re.sub(r'\b(latest|letter|letters|litter|litters|latter)\b', 'liters', text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'\b(to|too)\s+(liters?|litres?|kgs?|kilos?|packets?|packs?|pieces?|pcs?|bottles?|tins?|[a-zA-Z]+)\b', r'2 \2', norm_text, flags=re.IGNORECASE)
+    norm_text = re.sub(r'\b(for|fore)\s+(liters?|litres?|kgs?|kilos?|packets?|packs?|pieces?|pcs?|bottles?|tins?)\b', r'4 \2', norm_text, flags=re.IGNORECASE)
+    clean_text = norm_text.replace('₹', ' rs ').replace('Rs.', ' rs ').replace('rs.', ' rs ').replace(',', ' ')
+    
     items = []
     # Pattern 1: (Product) (Qty) (Unit)? (at/for/rs)? (Price)
-    p1 = re.compile(r'([a-zA-Z\s]+?)\s+(\d+(?:\.\d+)?)\s*(kgs?|kg|litres?|l|packets?|packs?|nos?|pieces?|pcs?|g)?\s*(?:(?:at|for|rs|rupees)\s*)?(?:rs|₹)?\s*(\d+(?:\.\d+)?)\.?', re.IGNORECASE)
+    p1 = re.compile(r'([a-zA-Z\s]+?)\s+(\d+(?:\.\d+)?)\s*(kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)?\s*(?:(?:at|for|rs|rupees)\s*)?(?:rs|₹)?\s*(\d+(?:\.\d+)?)\.?', re.IGNORECASE)
     matches = p1.findall(clean_text)
     if matches:
         for m in matches:
@@ -472,14 +480,14 @@ def parse_voice_text_locally(text):
                 'total': qty * unit_price
             })
     else:
-        # Pattern 2: (Qty) (Product) (at/for/rs)? (Price)
-        p2 = re.compile(r'(\d+)\s+([a-zA-Z\s]+?)\s+(?:(?:at|for|rs|rupees)\s*)?(?:rs|₹)?\s*(\d+(?:\.\d+)?)\.?', re.IGNORECASE)
+        # Pattern 2: (Qty) (Unit)? (Product) (at/for/rs)? (Price)
+        p2 = re.compile(r'(\d+(?:\.\d+)?)\s*(kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)?\s+([a-zA-Z\s]+?)\s+(?:(?:at|for|rs|rupees)\s*)?(?:rs|₹)?\s*(\d+(?:\.\d+)?)\.?', re.IGNORECASE)
         m2 = p2.findall(clean_text)
         if m2:
             for m in m2:
-                qty = int(m[0])
-                prod_name = m[1].strip()
-                unit_price = float(m[2]) if '.' in m[2] else int(m[2])
+                qty = float(m[0]) if '.' in m[0] else int(m[0])
+                prod_name = m[2].strip()
+                unit_price = float(m[3]) if '.' in m[3] else int(m[3])
                 items.append({
                     'product': prod_name.title(),
                     'quantity': qty,
@@ -490,23 +498,45 @@ def parse_voice_text_locally(text):
             # Pattern 3: (Product) (at/for/rs)? (Price)
             p3 = re.compile(r'([a-zA-Z\s]+?)\s+(?:(?:at|for|rs|rupees)\s*)?(?:rs|₹)\s*(\d+(?:\.\d+)?)\.?', re.IGNORECASE)
             m3 = p3.findall(clean_text)
-            for m in m3:
-                prod_name = m[0].strip()
-                unit_price = float(m[1]) if '.' in m[1] else int(m[1])
-                items.append({
-                    'product': prod_name.title(),
-                    'quantity': 1,
-                    'unit_price': unit_price,
-                    'total': unit_price
-                })
+            if m3:
+                for m in m3:
+                    prod_name = m[0].strip()
+                    unit_price = float(m[1]) if '.' in m[1] else int(m[1])
+                    items.append({
+                        'product': prod_name.title(),
+                        'quantity': 1,
+                        'unit_price': unit_price,
+                        'total': unit_price
+                    })
+            else:
+                # Pattern 4: (Qty) (Unit)? (Product) without price, e.g. "two liters milk" or "2 liters milk"
+                p4 = re.compile(r'(\d+(?:\.\d+)?)\s*(kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)?\s+(?:of\s+)?([a-zA-Z\s]+)', re.IGNORECASE)
+                m4 = p4.findall(clean_text)
+                if m4:
+                    for m in m4:
+                        qty = float(m[0]) if '.' in m[0] else int(m[0])
+                        prod_name = m[2].strip()
+                        prod_name = re.sub(r'\b(please|bill|item|thanks|total)\b', '', prod_name, flags=re.IGNORECASE).strip()
+                        if prod_name:
+                            items.append({
+                                'product': prod_name.title(),
+                                'quantity': qty,
+                                'unit_price': 0,
+                                'total': 0
+                            })
     return items
 
 
 class VoiceBillingView(APIView):
     def post(self, request):
-        text = request.data.get("text", "")
-        if not text:
+        raw_text = request.data.get("text", "")
+        if not raw_text:
             return Response({"success": False, "error": "No text provided"}, status=400)
+
+        # Phonetic clean up for Indian accent speech
+        text = re.sub(r'\b(latest|letter|letters|litter|litters|latter)\b', 'liters', raw_text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(to|too)\s+(liters?|litres?|kgs?|kilos?|packets?|packs?|pieces?|pcs?|bottles?|tins?|[a-zA-Z]+)\b', r'2 \2', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(for|fore)\s+(liters?|litres?|kgs?|kilos?|packets?|packs?|pieces?|pcs?|bottles?|tins?)\b', r'4 \2', text, flags=re.IGNORECASE)
 
         # 1. Setup Gemini
         gemini_api_key = os.environ.get("GEMINI_API_KEY")
@@ -519,11 +549,17 @@ class VoiceBillingView(APIView):
                 client = genai.Client(api_key=gemini_api_key)
                 
                 prompt = f"""
-You are an AI assistant that extracts product, quantity, and price information from a voice billing transcript.
-The user said: "{text}"
+You are an expert AI assistant that extracts product, quantity, and price information from a retail voice billing transcript.
+Transcript: "{text}"
 
-Extract the items and calculate the total for each item and the grand total.
-Respond strictly in valid JSON format like this, and nothing else:
+Indian Accent & Grocery Guidelines:
+- "latest", "letters", "litters" means "liters" (e.g. "two latest milk" or "2 liters milk" -> product: "Milk", quantity: 2).
+- "to" or "too" before a unit or item means the number 2 (e.g. "to liters" -> 2 liters).
+- Indian grocery terms: "Kandi pappu" / "Kanth pappu" -> Toor Dal / Kandi Pappu, "Atta" -> Wheat Flour / Atta.
+- If a price is mentioned (e.g. "for 120", "at 60 rupees", "rs 50"), calculate total = quantity * unit_price.
+- If NO price is mentioned in the speech (e.g. "two liters milk" or "1 kg sugar"), still extract the product and quantity! Set unit_price to 0 and total to 0.
+
+Respond strictly in valid JSON format like this:
 {{
   "items": [
     {{
@@ -999,4 +1035,101 @@ class AdminOverviewView(APIView):
                 'ai_gemini': 'Ready (Gemini 3.5 & 3.8 Flash)'
             }
         })
+
+
+class GeneratePDFBillView(APIView):
+    def post(self, request):
+        shopkeeper = get_current_shopkeeper(request)
+        data = request.data or {}
+        
+        items = data.get('items', [])
+        grand_total = data.get('grand_total', 0)
+        customer = data.get('customer') or 'Walk-in Customer'
+        invoice = data.get('invoice') or f"INV-{datetime.now().strftime('%M%S')}"
+        qgbi = data.get('qgbi') or "QGBI-VERIFIED"
+        payment_mode = data.get('payment_mode') or "Paid"
+        
+        store_name = (shopkeeper.store_name if shopkeeper else None) or data.get('store_name') or "QuantumVoice Store"
+        store_email = (shopkeeper.email if shopkeeper else None) or data.get('store_email') or ""
+        store_phone = (shopkeeper.phone if shopkeeper else None) or data.get('store_phone') or ""
+        
+        invoice_data = {
+            'invoice': invoice,
+            'customer': customer,
+            'store_name': store_name,
+            'store_email': store_email,
+            'store_phone': store_phone,
+            'date': datetime.now().strftime('%d %b %Y, %I:%M %p'),
+            'items': items,
+            'grand_total': grand_total,
+            'qgbi': qgbi,
+            'payment_mode': payment_mode
+        }
+        
+        try:
+            pdf_bytes = generate_invoice_pdf(invoice_data)
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            safe_invoice = str(invoice).replace('#', '').replace(' ', '_')
+            response['Content-Disposition'] = f'attachment; filename="QuantumVoice_Invoice_{safe_invoice}.pdf"'
+            response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+            return response
+        except Exception as e:
+            print("Error generating PDF invoice:", str(e))
+            return Response({'success': False, 'error': f"Failed to generate PDF: {str(e)}"}, status=500)
+
+
+class DownloadBillPDFView(APIView):
+    def get(self, request, bill_id=None):
+        shopkeeper = get_current_shopkeeper(request)
+        try:
+            bill = Bill.objects.filter(id=bill_id).first()
+            if not bill:
+                return Response({'success': False, 'error': 'Bill not found'}, status=404)
+            
+            store_name = (bill.shopkeeper.store_name if bill.shopkeeper else (shopkeeper.store_name if shopkeeper else "QuantumVoice Store"))
+            store_email = (bill.shopkeeper.email if bill.shopkeeper else (shopkeeper.email if shopkeeper else ""))
+            store_phone = (bill.shopkeeper.phone if bill.shopkeeper else (shopkeeper.phone if shopkeeper else ""))
+            
+            # Retrieve item breakdown from associated activity log if present
+            activity = ActivityLog.objects.filter(
+                action_type='BILL_CREATED',
+                title__contains=bill.invoice
+            ).first()
+            items = []
+            if activity and activity.metadata and isinstance(activity.metadata, dict):
+                items = activity.metadata.get('items', [])
+            
+            if not items:
+                clean_amt = str(bill.amount).replace('₹', '').replace(',', '').strip()
+                amt_val = float(clean_amt) if clean_amt else 0
+                items = [{
+                    'product': f"Retail Purchase ({bill.invoice})",
+                    'quantity': 1,
+                    'unit_price': amt_val,
+                    'total': amt_val
+                }]
+            
+            invoice_data = {
+                'invoice': bill.invoice,
+                'customer': bill.customer,
+                'store_name': store_name,
+                'store_email': store_email,
+                'store_phone': store_phone,
+                'date': bill.created_at.strftime('%d %b %Y, %I:%M %p') if bill.created_at else bill.time,
+                'items': items,
+                'grand_total': bill.amount,
+                'qgbi': f"QGBI-TXN-{bill.id:04d}",
+                'payment_mode': bill.status or "Paid"
+            }
+            
+            pdf_bytes = generate_invoice_pdf(invoice_data)
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            safe_invoice = str(bill.invoice).replace('#', '').replace(' ', '_')
+            response['Content-Disposition'] = f'attachment; filename="QuantumVoice_Invoice_{safe_invoice}.pdf"'
+            response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+            return response
+        except Exception as e:
+            print("Error downloading PDF for bill:", str(e))
+            return Response({'success': False, 'error': f"Failed to download PDF: {str(e)}"}, status=500)
+
 
