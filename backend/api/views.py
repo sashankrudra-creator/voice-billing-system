@@ -579,7 +579,8 @@ class VoiceBillingView(APIView):
         if gemini_api_key:
             try:
                 from google import genai
-                client = genai.Client(api_key=gemini_api_key)
+                # Connect specifically via v1beta where generateContent multimodal models are active
+                client = genai.Client(api_key=gemini_api_key, http_options={'api_version': 'v1beta'})
                 
                 prompt = f"""
 You are an expert AI assistant that extracts product, quantity, and price information from a retail voice billing transcript.
@@ -605,8 +606,7 @@ Respond strictly in valid JSON format like this:
   "grand_total": 120
 }}
 """
-                # Model cascade: Use the latest active models recommended by Google API
-                candidate_models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+                candidate_models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-8b']
                 response = None
 
                 for model_name in candidate_models:
@@ -621,6 +621,16 @@ Respond strictly in valid JSON format like this:
                         last_error = str(model_err)
                         print(f"Model {model_name} failed: {model_err}, trying next fallback...")
                         continue
+
+                # Secondary fallback to legacy SDK if new SDK fails
+                if not response or not response.text:
+                    try:
+                        import google.generativeai as legacy_genai
+                        legacy_genai.configure(api_key=gemini_api_key)
+                        l_model = legacy_genai.GenerativeModel('gemini-1.5-flash')
+                        response = l_model.generate_content(prompt)
+                    except Exception as leg_err:
+                        print(f"Legacy genai voice fallback failed: {leg_err}")
 
                 if response and response.text:
                     res_text = response.text.strip()
@@ -719,7 +729,7 @@ class ImageBillingView(APIView):
 
         try:
             from google import genai
-            client = genai.Client(api_key=gemini_api_key)
+            client = genai.Client(api_key=gemini_api_key, http_options={'api_version': 'v1beta'})
             
             prompt = """
 You are an expert retail assistant. Analyze this image of groceries/products.
@@ -744,7 +754,7 @@ Do not include any markdown formatting like ```json or any explanations. Just ou
             if max(image_obj.size) > 1200:
                 image_obj.thumbnail((1200, 1200))
             
-            candidate_models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+            candidate_models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-8b']
             response = None
             last_error = ""
 
@@ -760,6 +770,16 @@ Do not include any markdown formatting like ```json or any explanations. Just ou
                     last_error = str(model_err)
                     print(f"Image model {model_name} failed: {model_err}, trying next fallback...")
                     continue
+
+            # Secondary fallback to legacy SDK if new SDK fails
+            if not response or not response.text:
+                try:
+                    import google.generativeai as legacy_genai
+                    legacy_genai.configure(api_key=gemini_api_key)
+                    l_model = legacy_genai.GenerativeModel('gemini-1.5-flash')
+                    response = l_model.generate_content([prompt, image_obj])
+                except Exception as leg_err:
+                    print(f"Legacy genai image fallback failed: {leg_err}")
 
             if not response or not response.text:
                 raise Exception(last_error or "Image billing AI request failed.")
