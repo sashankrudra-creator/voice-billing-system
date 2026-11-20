@@ -7,6 +7,42 @@ import { useAuth } from "../App";
 import PaymentModal from "./PaymentModal";
 import { API_BASE_URL } from "../apiConfig";
 
+// Compresses large camera photos to a clean ~200KB web-optimized JPEG to prevent OOM/timeouts
+function compressImage(file: File, maxDimension: number = 1200, quality: number = 0.82): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function ImageBilling() {
   const { shopkeeper } = useAuth();
   const [image, setImage] = useState<string | null>(() => sessionStorage.getItem('imageBilling_image') || null);
@@ -49,16 +85,24 @@ export default function ImageBilling() {
       sessionStorage.removeItem('imageBilling_items');
   };
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImage(reader.result as string);
+      try {
+        const compressed = await compressImage(file);
+        setImage(compressed);
         setItems([]);
         setError("");
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.warn("Client compression failed, falling back to direct reader", err);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setImage(reader.result as string);
+          setItems([]);
+          setError("");
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 

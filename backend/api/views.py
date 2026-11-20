@@ -740,6 +740,9 @@ Do not include any markdown formatting like ```json or any explanations. Just ou
             
             image_bytes = base64.b64decode(image_data)
             image_obj = PIL.Image.open(BytesIO(image_bytes))
+            # Safely cap dimensions to 1200px max to minimize memory usage and network transfer
+            if max(image_obj.size) > 1200:
+                image_obj.thumbnail((1200, 1200))
             
             candidate_models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
             response = None
