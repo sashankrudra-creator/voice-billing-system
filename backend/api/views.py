@@ -494,13 +494,17 @@ def parse_voice_text_locally(text):
     clean_text = norm_text.replace('₹', ' rs ').replace('Rs.', ' rs ').replace('rs.', ' rs ').replace(',', ' ')
     
     items = []
-    # Pattern 1: (Product) (Qty) (Unit)? (at/for/rs)? (Price)
-    p1 = re.compile(r'([a-zA-Z\s]+?)\s+(\d+(?:\.\d+)?)\s*(kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)?\s*(?:(?:at|for|rs|rupees)\s*)?(?:rs|₹)?\s*(\d+(?:\.\d+)?)\.?', re.IGNORECASE)
-    matches = p1.findall(clean_text)
-    if matches:
-        for m in matches:
-            prod_name = m[0].strip()
-            qty = float(m[1]) if '.' in m[1] else int(m[1])
+    # Priority 1: (Qty) (Unit)? (Product) (at/for/rs)? (Price) (rs/rupees)?
+    p_qty_first = re.compile(
+        r'(?:^|[,\n])\s*(\d+(?:\.\d+)?)\s*(kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)?\s+([a-zA-Z\s]+?)\s+(?:(?:at|for|rs|rupees)\s*)?(?:rs|₹)?\s*(\d+(?:\.\d+)?)\s*(?:rs|rupees|₹)?(?:\b|\.|$)',
+        re.IGNORECASE
+    )
+    m_qty = p_qty_first.findall(clean_text)
+    if m_qty:
+        for m in m_qty:
+            qty = float(m[0]) if '.' in m[0] else int(m[0])
+            prod_name = m[2].strip()
+            prod_name = re.sub(r'^(?:kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)\s+', '', prod_name, flags=re.IGNORECASE)
             unit_price = float(m[3]) if '.' in m[3] else int(m[3])
             items.append({
                 'product': prod_name.title(),
@@ -509,13 +513,17 @@ def parse_voice_text_locally(text):
                 'total': qty * unit_price
             })
     else:
-        # Pattern 2: (Qty) (Unit)? (Product) (at/for/rs)? (Price)
-        p2 = re.compile(r'(\d+(?:\.\d+)?)\s*(kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)?\s+([a-zA-Z\s]+?)\s+(?:(?:at|for|rs|rupees)\s*)?(?:rs|₹)?\s*(\d+(?:\.\d+)?)\.?', re.IGNORECASE)
-        m2 = p2.findall(clean_text)
-        if m2:
-            for m in m2:
-                qty = float(m[0]) if '.' in m[0] else int(m[0])
-                prod_name = m[2].strip()
+        # Priority 2: (Product) (Qty) (Unit)? (at/for/rs)? (Price)
+        p_prod_first = re.compile(
+            r'(?:^|[,\n])\s*([a-zA-Z\s]+?)\s+(\d+(?:\.\d+)?)\s*(kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)?\s*(?:(?:at|for|rs|rupees)\s*)?(?:rs|₹)?\s*(\d+(?:\.\d+)?)\s*(?:rs|rupees|₹)?(?:\b|\.|$)',
+            re.IGNORECASE
+        )
+        matches = p_prod_first.findall(clean_text)
+        if matches:
+            for m in matches:
+                prod_name = m[0].strip()
+                prod_name = re.sub(r'^(?:kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)\s+', '', prod_name, flags=re.IGNORECASE)
+                qty = float(m[1]) if '.' in m[1] else int(m[1])
                 unit_price = float(m[3]) if '.' in m[3] else int(m[3])
                 items.append({
                     'product': prod_name.title(),
@@ -524,7 +532,7 @@ def parse_voice_text_locally(text):
                     'total': qty * unit_price
                 })
         else:
-            # Pattern 3: (Product) (at/for/rs)? (Price)
+            # Priority 3: (Product) (at/for/rs)? (Price)
             p3 = re.compile(r'([a-zA-Z\s]+?)\s+(?:(?:at|for|rs|rupees)\s*)?(?:rs|₹)\s*(\d+(?:\.\d+)?)\.?', re.IGNORECASE)
             m3 = p3.findall(clean_text)
             if m3:
@@ -538,13 +546,14 @@ def parse_voice_text_locally(text):
                         'total': unit_price
                     })
             else:
-                # Pattern 4: (Qty) (Unit)? (Product) without price, e.g. "two liters milk" or "2 liters milk"
-                p4 = re.compile(r'(\d+(?:\.\d+)?)\s*(kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)?\s+(?:of\s+)?([a-zA-Z\s]+)', re.IGNORECASE)
+                # Priority 4: (Qty) (Unit)? (Product) without price, e.g. "two liters milk" or "2 liters milk"
+                p4 = re.compile(r'(?:^|[,\n])\s*(\d+(?:\.\d+)?)\s*(kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)?\s+(?:of\s+)?([a-zA-Z\s]+)', re.IGNORECASE)
                 m4 = p4.findall(clean_text)
                 if m4:
                     for m in m4:
                         qty = float(m[0]) if '.' in m[0] else int(m[0])
                         prod_name = m[2].strip()
+                        prod_name = re.sub(r'^(?:kgs?|kg|litres?|liters?|l|packets?|packs?|nos?|pieces?|pcs?|g)\s+', '', prod_name, flags=re.IGNORECASE)
                         prod_name = re.sub(r'\b(please|bill|item|thanks|total)\b', '', prod_name, flags=re.IGNORECASE).strip()
                         if prod_name:
                             items.append({
@@ -577,73 +586,67 @@ class VoiceBillingView(APIView):
         last_error = ""
 
         if gemini_api_key:
-            try:
-                from google import genai
-                # Connect specifically via v1beta where generateContent multimodal models are active
-                client = genai.Client(api_key=gemini_api_key, http_options={'api_version': 'v1beta'})
-                
-                prompt = f"""
-You are an expert AI assistant that extracts product, quantity, and price information from a retail voice billing transcript.
+            import requests
+            prompt = f"""You are an expert AI assistant that extracts product, quantity, and price information from a retail voice billing transcript.
 Transcript: "{text}"
 
 Indian Accent & Grocery Guidelines:
 - "latest", "letters", "litters" means "liters" (e.g. "two latest milk" or "2 liters milk" -> product: "Milk", quantity: 2).
 - "to" or "too" before a unit or item means the number 2 (e.g. "to liters" -> 2 liters).
 - Indian grocery terms: "Kandi pappu" / "Kanth pappu" / "skandapoo" -> Toor Dal / Kandi Pappu, "Atta" -> Wheat Flour / Atta.
-- If a price is mentioned (e.g. "for 120", "at 60 rupees", "rs 50"), calculate total = quantity * unit_price.
-- If NO price is mentioned in the speech (e.g. "two liters milk" or "3 kg kandi pappu"), still extract the product and quantity! Set unit_price to 0 and total to 0.
+- When a price is spoken (e.g. "30 rupees", "for 120", "at 60 rupees", "rs 50"), extract unit_price as the rate mentioned (e.g., 30) and compute total = quantity * unit_price (e.g., 3 * 30 = 90).
+- Product name should NEVER include the unit or quantity (e.g. product is "Tomatoes", NEVER "3 kgs tomatoes" or "Kgs Tomatoes").
+- If NO price is mentioned in the speech, still extract product and quantity! Set unit_price to 0 and total to 0.
 
-Respond strictly in valid JSON format like this:
+Respond strictly in valid JSON format matching this structure:
 {{
   "items": [
     {{
-      "product": "Product Name",
-      "quantity": 2,
-      "unit_price": 60,
-      "total": 120
+      "product": "Tomatoes",
+      "quantity": 3,
+      "unit_price": 30,
+      "total": 90
     }}
   ],
-  "grand_total": 120
-}}
-"""
-                candidate_models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-8b']
-                response = None
+  "grand_total": 90
+}}"""
+            models = ["gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-flash-latest"]
+            res_text = ""
+            for model in models:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_api_key}"
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"response_mime_type": "application/json"}
+                }
+                try:
+                    r = requests.post(url, json=payload, timeout=15)
+                    if r.status_code == 200:
+                        data = r.json()
+                        candidates = data.get("candidates", [])
+                        if candidates and "content" in candidates[0]:
+                            parts = candidates[0]["content"].get("parts", [])
+                            if parts and "text" in parts[0]:
+                                res_text = parts[0]["text"].strip()
+                                break
+                    else:
+                        last_error = f"Model {model} returned HTTP {r.status_code}"
+                except Exception as e:
+                    last_error = f"Model {model} error: {str(e)}"
+                    continue
 
-                for model_name in candidate_models:
-                    try:
-                        response = client.models.generate_content(
-                            model=model_name,
-                            contents=prompt,
-                        )
-                        if response and response.text:
-                            break
-                    except Exception as model_err:
-                        last_error = str(model_err)
-                        print(f"Model {model_name} failed: {model_err}, trying next fallback...")
-                        continue
-
-                # Secondary fallback to legacy SDK if new SDK fails
-                if not response or not response.text:
-                    try:
-                        import google.generativeai as legacy_genai
-                        legacy_genai.configure(api_key=gemini_api_key)
-                        l_model = legacy_genai.GenerativeModel('gemini-1.5-flash')
-                        response = l_model.generate_content(prompt)
-                    except Exception as leg_err:
-                        print(f"Legacy genai voice fallback failed: {leg_err}")
-
-                if response and response.text:
-                    res_text = response.text.strip()
-                    if res_text.startswith("```json"):
-                        res_text = res_text[7:-3].strip()
-                    elif res_text.startswith("```"):
-                        res_text = res_text[3:-3].strip()
-
-                    billing_data = json.loads(res_text)
-
-            except Exception as e:
-                last_error = str(e)
-                print("Gemini Voice Processing error:", e)
+            if res_text:
+                try:
+                    cleaned = res_text.strip()
+                    if cleaned.startswith("```"):
+                        cleaned = re.sub(r"^```[a-zA-Z]*\s*", "", cleaned)
+                    if cleaned.endswith("```"):
+                        cleaned = re.sub(r"\s*```$", "", cleaned)
+                    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+                    if match:
+                        cleaned = match.group(0)
+                    billing_data = json.loads(cleaned)
+                except Exception as e:
+                    print("Gemini Voice Processing JSON error:", e)
 
         # Intelligent local fallback if Gemini is offline, busy, or no API key
         if not billing_data or not billing_data.get('items'):
