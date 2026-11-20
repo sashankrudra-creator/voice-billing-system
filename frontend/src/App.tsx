@@ -4,8 +4,9 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { useState, createContext, useContext } from "react";
+import { useState, useEffect, createContext, useContext } from "react";
 import axios from "axios";
+import { API_BASE_URL } from "./apiConfig";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Register from "./pages/Register";
@@ -53,6 +54,12 @@ function Router() {
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
+  
+  useEffect(() => {
+    // Silent warm-up ping to wake up sleeping Render backend as soon as user opens the app
+    axios.get(`${API_BASE_URL}/api/products/?limit=1`, { timeout: 60000 }).catch(() => {});
+  }, []);
+
   const [shopkeeper, setShopkeeper] = useState(() => {
     const saved = JSON.parse(localStorage.getItem('shopkeeper') || 'null');
     if (saved?.email) {

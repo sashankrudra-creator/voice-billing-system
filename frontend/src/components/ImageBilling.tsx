@@ -71,7 +71,7 @@ export default function ImageBilling() {
       const response = await axios.post(`${API_BASE_URL}/api/image-billing/`, {
         image: image,
         shopkeeper_email: shopkeeper?.email
-      });
+      }, { timeout: 120000 });
       
       if (response.data && response.data.success) {
           // Initialize empty quantity and price for shopkeeper to fill
@@ -87,7 +87,11 @@ export default function ImageBilling() {
       }
     } catch (err: any) {
       console.error(err);
-      setError("Could not extract products from the image.");
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        setError("The server took too long to respond while waking up. Please click Extract Products again.");
+      } else {
+        setError(err.response?.data?.error || "Could not extract products from the image.");
+      }
     } finally {
       setProcessing(false);
     }

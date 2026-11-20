@@ -605,8 +605,8 @@ Respond strictly in valid JSON format like this:
   "grand_total": 120
 }}
 """
-                # Model cascade: Try stable models first to avoid 503 high demand spikes
-                candidate_models = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-flash-lite-latest']
+                # Model cascade: Try stable Gemini 2.0 and 1.5 Flash first
+                candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']
                 response = None
 
                 for model_name in candidate_models:
@@ -741,7 +741,7 @@ Do not include any markdown formatting like ```json or any explanations. Just ou
             image_bytes = base64.b64decode(image_data)
             image_obj = PIL.Image.open(BytesIO(image_bytes))
             
-            candidate_models = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash']
+            candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest']
             response = None
             last_error = ""
 

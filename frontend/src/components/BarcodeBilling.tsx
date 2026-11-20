@@ -141,10 +141,11 @@ export default function BarcodeBilling() {
       oscillator.stop(context.currentTime + 0.1);
   };
 
-  const onScanSuccess = async (decodedText: string, resumeCamera: boolean = true) => {
+  const onScanSuccess = async (decodedText: string, resumeCamera: any = true) => {
+      const shouldResume = typeof resumeCamera === 'boolean' ? resumeCamera : true;
       // Pause scanning momentarily
-      if (resumeCamera) setScanning(false);
-      setAutoResumeCamera(resumeCamera);
+      if (shouldResume) setScanning(false);
+      setAutoResumeCamera(shouldResume);
       playBeep();
       if (navigator.vibrate) navigator.vibrate(100);
 

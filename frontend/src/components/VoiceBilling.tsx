@@ -74,7 +74,7 @@ export default function VoiceBilling() {
 
   useEffect(() => {
     // Check if browser supports SpeechRecognition
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       const recognition = new SpeechRecognition();
@@ -206,7 +206,7 @@ export default function VoiceBilling() {
       const response = await axios.post(`${API_BASE_URL}/api/voice-billing/`, {
         text: transcript,
         shopkeeper_email: shopkeeper?.email
-      });
+      }, { timeout: 120000 });
       
       if (response.data && response.data.success) {
           setBillingData(response.data);
@@ -221,7 +221,11 @@ export default function VoiceBilling() {
       }
     } catch (err: any) {
       console.error(err);
-      setError("Could not identify the product and price. Please speak again.");
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        setError("The server took too long to respond while waking up. Please click Process Bill again.");
+      } else {
+        setError(err.response?.data?.error || "Could not identify the product and price. Please speak again.");
+      }
     } finally {
       setProcessing(false);
     }

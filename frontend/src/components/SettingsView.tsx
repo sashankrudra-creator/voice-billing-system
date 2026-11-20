@@ -13,6 +13,7 @@ export default function SettingsView() {
     email: shopkeeper?.email || "",
     storeName: shopkeeper?.store_name || "",
     phone: shopkeeper?.phone || "",
+    address: shopkeeper?.address || "",
     password: "",
   });
 
