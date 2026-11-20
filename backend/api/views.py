@@ -720,19 +720,18 @@ class ImageBillingView(APIView):
         if not image_data:
             return Response({"success": False, "error": "No image provided"}, status=400)
 
-        if "base64," in image_data:
+        mime_type = "image/jpeg"
+        if "data:" in image_data and ";base64," in image_data:
+            header, image_data = image_data.split(";base64,")
+            mime_type = header.replace("data:", "").strip()
+        elif "base64," in image_data:
             image_data = image_data.split("base64,")[1]
 
         gemini_api_key = os.environ.get("IMAGE_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
         if not gemini_api_key:
             return Response({"success": False, "error": "IMAGE_GEMINI_API_KEY is not set in environment"}, status=200)
 
-        try:
-            from google import genai
-            client = genai.Client(api_key=gemini_api_key, http_options={'api_version': 'v1beta'})
-            
-            prompt = """
-You are an expert retail assistant. Analyze this image of groceries/products.
+        prompt = """You are an expert retail assistant. Analyze this image of groceries/products.
 Identify all the distinct products visible.
 Do NOT estimate quantities.
 Respond STRICTLY in valid JSON format matching this structure:
@@ -743,89 +742,89 @@ Respond STRICTLY in valid JSON format matching this structure:
     }
   ]
 }
-Do not include any markdown formatting like ```json or any explanations. Just output the raw JSON object.
-"""
-            from io import BytesIO
-            import PIL.Image
-            
-            image_bytes = base64.b64decode(image_data)
-            image_obj = PIL.Image.open(BytesIO(image_bytes))
-            # Safely cap dimensions to 1200px max to minimize memory usage and network transfer
-            if max(image_obj.size) > 1200:
-                image_obj.thumbnail((1200, 1200))
-            
-            candidate_models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-8b']
-            response = None
-            last_error = ""
+Do not include any markdown formatting like ```json or any explanations. Just output the raw JSON object."""
 
-            for model_name in candidate_models:
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=[prompt, image_obj]
-                    )
-                    if response and response.text:
-                        break
-                except Exception as model_err:
-                    last_error = str(model_err)
-                    print(f"Image model {model_name} failed: {model_err}, trying next fallback...")
-                    continue
+        import requests
+        models = ["gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-flash-latest"]
+        res_text = ""
+        last_error = ""
 
-            # Secondary fallback to legacy SDK if new SDK fails
-            if not response or not response.text:
-                try:
-                    import google.generativeai as legacy_genai
-                    legacy_genai.configure(api_key=gemini_api_key)
-                    l_model = legacy_genai.GenerativeModel('gemini-1.5-flash')
-                    response = l_model.generate_content([prompt, image_obj])
-                except Exception as leg_err:
-                    print(f"Legacy genai image fallback failed: {leg_err}")
-
-            if not response or not response.text:
-                raise Exception(last_error or "Image billing AI request failed.")
-
-            res_text = response.text.strip()
-            
-            if res_text.startswith("```json"):
-                res_text = res_text[7:-3].strip()
-            elif res_text.startswith("```"):
-                res_text = res_text[3:-3].strip()
-
-            billing_data = json.loads(res_text)
-            
-            # Match with actual DB products for image billing
-            shopkeeper = get_current_shopkeeper(request)
-            for item in billing_data.get('items', []):
-                item['quantity'] = item.get('quantity', 1)
-                if shopkeeper:
-                    matched_product = Product.objects.filter(name__icontains=item['product'], shopkeeper=shopkeeper).first()
+        for model in models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_api_key}"
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": prompt},
+                            {"inline_data": {"mime_type": mime_type, "data": image_data}}
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "response_mime_type": "application/json"
+                }
+            }
+            try:
+                r = requests.post(url, json=payload, timeout=25)
+                if r.status_code == 200:
+                    data = r.json()
+                    candidates = data.get("candidates", [])
+                    if candidates and "content" in candidates[0]:
+                        parts = candidates[0]["content"].get("parts", [])
+                        if parts and "text" in parts[0]:
+                            res_text = parts[0]["text"].strip()
+                            break
                 else:
-                    matched_product = Product.objects.filter(name__icontains=item['product']).first()
-                if matched_product:
-                    item['product'] = matched_product.name
-                    try:
-                        price_str = matched_product.value.replace('₹', '').replace(',', '').strip()
-                        db_price = float(price_str) if price_str else 0
-                        item['unit_price'] = db_price
-                    except ValueError:
-                        item['unit_price'] = 0
-                    item['matched_in_db'] = True
-                else:
-                    item['matched_in_db'] = False
-                    item['unit_price'] = 0
-                    
-                item['total'] = item['quantity'] * item['unit_price']
-                
-            billing_data['grand_total'] = sum(item['total'] for item in billing_data.get('items', []))
-            
-            billing_data['success'] = True
-            return Response(billing_data)
+                    last_error = f"Model {model} returned HTTP {r.status_code}"
+            except Exception as e:
+                last_error = f"Model {model} error: {str(e)}"
+                continue
 
+        if not res_text:
+            return Response({"success": False, "error": f"Image Gemini Error: {last_error or 'Could not process image.'}"}, status=200)
+
+        try:
+            import re
+            cleaned = res_text.strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r"^```[a-zA-Z]*\s*", "", cleaned)
+            if cleaned.endswith("```"):
+                cleaned = re.sub(r"\s*```$", "", cleaned)
+            
+            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+            if match:
+                cleaned = match.group(0)
+
+            billing_data = json.loads(cleaned)
         except Exception as e:
-            error_message = str(e)
-            if '503' in error_message or 'UNAVAILABLE' in error_message or 'demand' in error_message.lower():
-                error_message = "Our AI servers are currently experiencing high demand. Please try again in a moment."
-            return Response({"success": False, "error": f"Image Gemini Error: {error_message}"}, status=200)
+            return Response({"success": False, "error": f"Failed to parse AI response: {str(e)}"}, status=200)
+
+        # Match with actual DB products for image billing
+        shopkeeper = get_current_shopkeeper(request)
+        for item in billing_data.get('items', []):
+            item['quantity'] = item.get('quantity', 1)
+            if shopkeeper:
+                matched_product = Product.objects.filter(name__icontains=item['product'], shopkeeper=shopkeeper).first()
+            else:
+                matched_product = Product.objects.filter(name__icontains=item['product']).first()
+            if matched_product:
+                item['product'] = matched_product.name
+                try:
+                    price_str = matched_product.value.replace('₹', '').replace(',', '').strip()
+                    db_price = float(price_str) if price_str else 0
+                    item['unit_price'] = db_price
+                except ValueError:
+                    item['unit_price'] = 0
+                item['matched_in_db'] = True
+            else:
+                item['matched_in_db'] = False
+                item['unit_price'] = 0
+                
+            item['total'] = item['quantity'] * item['unit_price']
+            
+        billing_data['grand_total'] = sum(item['total'] for item in billing_data.get('items', []))
+        billing_data['success'] = True
+        return Response(billing_data)
 
 from django.http import HttpResponse
 from reportlab.pdfgen import canvas
